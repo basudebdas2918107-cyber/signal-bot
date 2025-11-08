@@ -1,9 +1,8 @@
 python-telegram-bot==21.3
 pandas==2.2.3
-https://github.com/twopirllc/pandas-ta/archive/refs/heads/master.zip
+https://github.com/twopirllc/pandas-ta/archive/refs/tags/v0.3.14b0.zip
 ta==0.11.0
 requests==2.32.3
 httpx==0.24.1
 nest_asyncio==1.6.0
-
 
