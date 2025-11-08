@@ -8,10 +8,13 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # === YOUR TELEGRAM BOT TOKEN ===
-TOKEN = os.getenv("TOKEN")  # 🔹 Token will come from Render Environment Variables
+TOKEN = os.getenv("TOKEN")  # ✅ Set this in Render Environment
+
+if not TOKEN:
+    raise ValueError("❌ TELEGRAM TOKEN not found! Set TOKEN in Render Environment Variables.")
 
 # === LOGGING ===
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # === Global Control for Auto Signals ===
@@ -21,9 +24,11 @@ chat_id_global = None
 
 # === FETCH MARKET DATA (from Binance) ===
 def fetch_market_data(symbol="EURUSDT", interval="1m", limit=100):
+    """Fetches recent candlestick data from Binance API."""
     try:
         url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
         response = requests.get(url, timeout=10)
+        response.raise_for_status()
         data = response.json()
 
         df = pd.DataFrame(data, columns=[
@@ -38,14 +43,16 @@ def fetch_market_data(symbol="EURUSDT", interval="1m", limit=100):
         df["Low"] = df["Low"].astype(float)
         return df
     except Exception as e:
-        print(f"⚠️ Error fetching {symbol}: {e}")
+        logger.error(f"⚠️ Error fetching data for {symbol}: {e}")
         return pd.DataFrame()
 
-# === STRATEGY LOGIC (EMA + Bollinger) ===
+# === STRATEGY LOGIC (EMA + Bollinger Bands) ===
 def generate_signal(df):
+    """Generates a trading signal based on EMA and Bollinger Bands."""
     if df.empty:
         return "⚠️ No data available"
 
+    # Indicators
     df["EMA50"] = ta.trend.ema_indicator(df["Close"], window=50)
     bb = ta.volatility.BollingerBands(close=df["Close"], window=20, window_dev=2)
     df["bb_bbm"] = bb.bollinger_mavg()
@@ -55,6 +62,7 @@ def generate_signal(df):
     latest = df.iloc[-1]
     previous = df.iloc[-2]
 
+    # Conditions
     if latest["Close"] > latest["EMA50"] and previous["Close"] < previous["EMA50"]:
         return "📈 BUY (UP) — Price crossed above EMA50"
     elif latest["Close"] < latest["EMA50"] and previous["Close"] > previous["EMA50"]:
@@ -66,8 +74,9 @@ def generate_signal(df):
     else:
         return "⚠️ No clear signal"
 
-# === ANALYZE ALL PAIRS ===
+# === ANALYZE MULTIPLE PAIRS ===
 def analyze_all_pairs():
+    """Checks multiple Forex pairs and returns signal summaries."""
     pairs = {
         "EUR/USD": "EURUSDT",
         "GBP/USD": "GBPUSDT",
@@ -86,8 +95,9 @@ def analyze_all_pairs():
 
     return "\n".join(results)
 
-# === TELEGRAM COMMANDS ===
+# === TELEGRAM COMMAND HANDLERS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start auto-signal updates."""
     global auto_signal_running, chat_id_global, auto_signal_task
 
     chat_id_global = update.effective_chat.id
@@ -96,11 +106,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     auto_signal_running = True
-    await update.message.reply_text("🤖 Bot started! Auto signals every 5 minutes.\nUse /stop to turn it off.")
+    await update.message.reply_text("🤖 Bot started! Auto signals every 5 minutes.\nUse /stop to stop.")
 
     auto_signal_task = asyncio.create_task(auto_signal_loop(context.bot, chat_id_global))
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Stop auto-signal updates."""
     global auto_signal_running, auto_signal_task
 
     if auto_signal_running:
@@ -112,6 +123,7 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Auto updates are not running.")
 
 async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send manual market analysis."""
     await update.message.reply_text("📊 Fetching live market data...")
     try:
         results = analyze_all_pairs()
@@ -121,18 +133,20 @@ async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === AUTO SIGNAL LOOP ===
 async def auto_signal_loop(bot, chat_id):
+    """Runs automatic signal updates at intervals."""
     global auto_signal_running
     while auto_signal_running:
         try:
             results = analyze_all_pairs()
             await bot.send_message(chat_id=chat_id, text=f"📅 Auto Signal Update\n\n{results}")
-            print("✅ Auto signals sent.")
+            logger.info("✅ Auto signals sent successfully.")
         except Exception as e:
-            print(f"⚠️ Auto signal error: {e}")
+            logger.error(f"⚠️ Auto signal error: {e}")
         await asyncio.sleep(300)  # every 5 minutes
 
 # === MAIN FUNCTION ===
 async def main():
+    """Main entry point for the bot."""
     print("🚀 Starting Telegram Bot...")
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -145,7 +159,5 @@ async def main():
 
 if __name__ == "__main__":
     import nest_asyncio
-    import asyncio
-
     nest_asyncio.apply()
-    asyncio.get_event_loop().run_until_complete(main())
+    asyncio.run(main())
