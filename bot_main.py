@@ -8,7 +8,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # === YOUR TELEGRAM BOT TOKEN ===
-TOKEN = os.getenv("TOKEN") # 🔹 Replace this with your real token
+TOKEN = os.getenv("TOKEN")  # 🔹 Token will come from Render Environment Variables
 
 # === LOGGING ===
 logging.basicConfig(level=logging.INFO)
